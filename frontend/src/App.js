@@ -1,12 +1,14 @@
 // ============================================================
-//  App.js — Resume Analyzer Frontend
-//  Stack: React (Create React App) + Axios
+//  App.js — Resume Analyzer Frontend (FIXED FOR DEPLOYMENT)
 // ============================================================
 
 import React, { useState, useRef } from "react";
 import axios from "axios";
 import "./App.css";
 
+const BASE_URL = "https://resume-analyzer-8d1l.onrender.com";
+
+// Icons (unchanged)
 const UploadIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -81,16 +83,24 @@ export default function App() {
 
   function handleFileChange(e) {
     const f = e.target.files[0];
-    if (f && f.type === "application/pdf") { setPdfFile(f); setError(""); }
-    else setError("Please select a valid PDF file.");
+    if (f && f.type === "application/pdf") {
+      setPdfFile(f);
+      setError("");
+    } else {
+      setError("Please select a valid PDF file.");
+    }
   }
 
   function handleDrop(e) {
     e.preventDefault();
     setDragOver(false);
     const f = e.dataTransfer.files[0];
-    if (f && f.type === "application/pdf") { setPdfFile(f); setError(""); }
-    else setError("Only PDF files are accepted.");
+    if (f && f.type === "application/pdf") {
+      setPdfFile(f);
+      setError("");
+    } else {
+      setError("Only PDF files are accepted.");
+    }
   }
 
   async function handleAnalyze() {
@@ -98,31 +108,37 @@ export default function App() {
     setResult(null);
 
     if (mode === "paste" && !resumeText.trim()) {
-      setError("Please paste your resume text before analyzing.");
+      setError("Please paste your resume content.");
       return;
     }
+
     if (mode === "upload" && !pdfFile) {
-      setError("Please upload a PDF file before analyzing.");
+      setError("Please upload a PDF file.");
       return;
     }
 
     setLoading(true);
+
     try {
       let response;
 
       if (mode === "paste") {
         response = await axios.post(
-          "http://localhost:5000/analyze/text",
+          `${BASE_URL}/analyze/text`,
           { resumeText },
-          { timeout: 90000 } // 90 seconds — matches backend
+          { timeout: 90000 }
         );
       } else {
         const formData = new FormData();
         formData.append("resume", pdfFile);
+
         response = await axios.post(
-          "http://localhost:5000/analyze/pdf",
+          `${BASE_URL}/analyze/pdf`,
           formData,
-          { headers: { "Content-Type": "multipart/form-data" }, timeout: 90000 }
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+            timeout: 90000
+          }
         );
       }
 
@@ -131,9 +147,9 @@ export default function App() {
       if (err.response) {
         setError(`Server error ${err.response.status}: ${err.response.data?.error || "Unknown error"}`);
       } else if (err.code === "ECONNABORTED") {
-        setError("Request timed out. DeepSeek is taking too long — please try again.");
+        setError("Request timed out. AI is taking too long.");
       } else {
-        setError("Could not reach the backend. Is the server running on port 5000?");
+        setError("Backend not reachable. Check Render deployment.");
       }
     } finally {
       setLoading(false);
@@ -149,147 +165,70 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="blob blob-1" />
-      <div className="blob blob-2" />
-      <div className="blob blob-3" />
-
       <div className="container">
+
         <header className="header">
-          <div className="logo-mark"><SparkleIcon /></div>
-          <div>
-            <h1 className="title">Resume<span className="title-accent">AI</span></h1>
-            <p className="subtitle">Intelligent resume analysis in seconds</p>
-          </div>
+          <h1>Resume AI</h1>
         </header>
 
         {!result && (
-          <div className="card input-card">
-            <div className="mode-switcher">
-              <button className={`mode-btn ${mode === "paste" ? "active" : ""}`}
-                onClick={() => { setMode("paste"); setError(""); }}>
-                Paste Text
-              </button>
-              <button className={`mode-btn ${mode === "upload" ? "active" : ""}`}
-                onClick={() => { setMode("upload"); setError(""); }}>
-                Upload PDF
-              </button>
+          <div className="card">
+
+            <div>
+              <button onClick={() => setMode("paste")}>Paste</button>
+              <button onClick={() => setMode("upload")}>Upload PDF</button>
             </div>
 
             {mode === "paste" && (
               <textarea
-                className="resume-textarea"
-                placeholder="Paste your resume content here…"
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
-                rows={14}
+                placeholder="Paste resume here..."
+                rows={10}
               />
             )}
 
             {mode === "upload" && (
-              <div
-                className={`drop-zone ${dragOver ? "drag-over" : ""} ${pdfFile ? "has-file" : ""}`}
-                onClick={() => fileInputRef.current.click()}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-              >
-                <input ref={fileInputRef} type="file" accept="application/pdf"
-                  style={{ display: "none" }} onChange={handleFileChange} />
-                {pdfFile ? (
-                  <div className="file-info">
-                    <div className="file-icon-wrap"><FileIcon /></div>
-                    <div>
-                      <p className="file-name">{pdfFile.name}</p>
-                      <p className="file-size">{(pdfFile.size / 1024).toFixed(1)} KB</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="drop-prompt">
-                    <div className="upload-icon-wrap"><UploadIcon /></div>
-                    <p className="drop-title">Drop your PDF here</p>
-                    <p className="drop-hint">or click to browse</p>
-                  </div>
-                )}
+              <div onClick={() => fileInputRef.current.click()}>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="application/pdf"
+                  onChange={handleFileChange}
+                  hidden
+                />
+                {pdfFile ? <p>{pdfFile.name}</p> : <p>Click to upload PDF</p>}
               </div>
             )}
 
-            {error && (
-              <div className="error-banner">
-                <AlertIcon /><span>{error}</span>
-              </div>
-            )}
+            {error && <p style={{ color: "red" }}>{error}</p>}
 
-            <button
-              className={`analyze-btn ${loading ? "loading" : ""}`}
-              onClick={handleAnalyze}
-              disabled={loading}
-            >
-              {loading ? (
-                <><span className="spinner" /> Analyzing… (may take 20-30s)</>
-              ) : (
-                <><SparkleIcon /> Analyze Resume</>
-              )}
+            <button onClick={handleAnalyze} disabled={loading}>
+              {loading ? "Analyzing..." : "Analyze Resume"}
             </button>
+
           </div>
         )}
 
         {result && (
-          <div className="results-wrapper">
-            <div className="card score-card">
-              <ScoreRing score={result.overallScore} />
-              <div className="score-meta">
-                <h2 className="score-title">Overall Score</h2>
-                <p className="score-desc">{result.summary}</p>
-              </div>
-            </div>
+          <div>
+            <h2>Score: {result.overallScore}</h2>
+            <p>{result.summary}</p>
 
-            <div className="card detail-card">
-              <h3 className="section-heading strengths-heading">Strengths</h3>
-              <ul className="insight-list">
-                {result.strengths.map((s, i) => (
-                  <li key={i} className="insight-item strength-item">
-                    <span className="insight-icon"><CheckIcon /></span>
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <h3>Strengths</h3>
+            <ul>
+              {result.strengths.map((s, i) => <li key={i}>{s}</li>)}
+            </ul>
 
-            <div className="card detail-card">
-              <h3 className="section-heading improvements-heading">Areas to Improve</h3>
-              <ul className="insight-list">
-                {result.improvements.map((imp, i) => (
-                  <li key={i} className="insight-item improvement-item">
-                    <span className="insight-icon"><AlertIcon /></span>
-                    <span>{imp}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <h3>Improvements</h3>
+            <ul>
+              {result.improvements.map((i, idx) => <li key={idx}>{i}</li>)}
+            </ul>
 
-            <div className="card detail-card">
-              <h3 className="section-heading skills-heading">Detected Skills</h3>
-              <div className="skill-tags">
-                {result.skills.map((skill, i) => (
-                  <span key={i} className="skill-tag">{skill}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="card detail-card">
-              <h3 className="section-heading keywords-heading">Recommended Keywords</h3>
-              <div className="skill-tags">
-                {result.keywords.map((kw, i) => (
-                  <span key={i} className="keyword-tag">{kw}</span>
-                ))}
-              </div>
-            </div>
-
-            <button className="reset-btn" onClick={handleReset}>
-              ← Analyze Another Resume
-            </button>
+            <button onClick={handleReset}>Analyze Another</button>
           </div>
         )}
+
       </div>
     </div>
   );
