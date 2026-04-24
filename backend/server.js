@@ -1,132 +1,147 @@
 // ============================================================
-//  server.js — Resume Analyzer Backend (DeepSeek AI + dotenv)
-//
-//  Install:  npm install express multer cors axios pdf-parse dotenv
-//  Start:    node server.js
+//  Resume Analyzer Backend (DeepSeek AI + Render Ready)
 // ============================================================
 
 require("dotenv").config();
 
-const express  = require("express");
-const cors     = require("cors");
-const multer   = require("multer");
-const axios    = require("axios");
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const axios = require("axios");
 const pdfParse = require("pdf-parse");
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Middleware ───────────────────────────────────────────────
-app.use(cors());
+// ─────────────────────────────────────────────
+// CORS CONFIG (IMPORTANT FOR VERCEL)
+// ─────────────────────────────────────────────
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.json());
 
-// ── Multer ───────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// ROOT ROUTE (fixes "Cannot GET /")
+// ─────────────────────────────────────────────
+app.get("/", (req, res) => {
+  res.send("🚀 Resume Analyzer Backend is Running");
+});
+
+// ─────────────────────────────────────────────
+// HEALTH CHECK
+// ─────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    time: new Date().toISOString(),
+  });
+});
+
+// ─────────────────────────────────────────────
+// MULTER CONFIG (PDF upload)
+// ─────────────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    file.mimetype === "application/pdf"
-      ? cb(null, true)
-      : cb(new Error("Only PDF files are accepted."), false);
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are allowed"));
+    }
   },
 });
 
-// ── DeepSeek Analysis ────────────────────────────────────────
+// ─────────────────────────────────────────────
+// DEEPSEEK AI FUNCTION
+// ─────────────────────────────────────────────
 async function analyzeWithDeepSeek(resumeText) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
 
   if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY is missing from your .env file.");
+    throw new Error("Missing DEEPSEEK_API_KEY in environment variables");
   }
-
-  console.log("📤 Sending request to DeepSeek...");
 
   const response = await axios.post(
     "https://api.deepseek.com/chat/completions",
     {
       model: "deepseek-chat",
-      max_tokens: 1024,
       temperature: 0.7,
+      max_tokens: 1200,
       messages: [
         {
           role: "system",
           content:
-            "You are an expert resume reviewer. " +
-            "Respond with a single valid JSON object only. " +
-            "No markdown, no code fences, no explanation — just raw JSON.",
+            "You are an expert resume reviewer. Return ONLY valid JSON. No markdown, no explanation.",
         },
         {
           role: "user",
-          content: `Analyze this resume and return ONLY a JSON object:
+          content: `
+Analyze this resume and return ONLY JSON:
 
 {
-  "overallScore": <integer 0-100>,
-  "summary": "<2-3 sentence assessment of this specific resume>",
-  "strengths": ["<strength 1>", "<strength 2>", "<strength 3>", "<strength 4>"],
-  "improvements": ["<improvement 1>", "<improvement 2>", "<improvement 3>", "<improvement 4>", "<improvement 5>"],
-  "skills": ["<skill 1>", "<skill 2>", "<skill 3>", ...],
-  "keywords": ["<keyword 1>", "<keyword 2>", "<keyword 3>", ...]
+  "overallScore": 0-100,
+  "summary": "short analysis",
+  "strengths": [],
+  "improvements": [],
+  "skills": [],
+  "keywords": []
 }
 
-Base everything on the ACTUAL content of this resume.
-
 Resume:
----
 ${resumeText}
----
-
-Return ONLY the JSON.`,
+          `,
         },
       ],
     },
     {
       headers: {
-        "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-      timeout: 60000, // 60 seconds
+      timeout: 60000,
     }
   );
 
-  console.log("✅ DeepSeek responded successfully.");
+  let raw = response.data.choices[0].message.content;
 
-  const raw = response.data.choices[0].message.content
-    .replace(/```json|```/gi, "")
-    .trim();
+  // Clean possible markdown
+  raw = raw.replace(/```json|```/g, "").trim();
 
   return JSON.parse(raw);
 }
 
-// ── POST /analyze/text ───────────────────────────────────────
+// ─────────────────────────────────────────────
+// TEXT ANALYSIS ROUTE
+// ─────────────────────────────────────────────
 app.post("/analyze/text", async (req, res) => {
   const { resumeText } = req.body;
 
-  if (!resumeText || !resumeText.trim()) {
-    return res.status(400).json({ error: "resumeText is required." });
+  if (!resumeText) {
+    return res.status(400).json({ error: "resumeText is required" });
   }
 
   try {
-    const analysis = await analyzeWithDeepSeek(resumeText.trim());
-    return res.json({ analysis });
+    const analysis = await analyzeWithDeepSeek(resumeText);
+    res.json({ analysis });
   } catch (err) {
-    // Log full error details in the terminal
-    if (err.response) {
-      console.error("❌ DeepSeek API error:", err.response.status, JSON.stringify(err.response.data));
-      return res.status(500).json({ error: `DeepSeek error ${err.response.status}: ${JSON.stringify(err.response.data)}` });
-    } else if (err.code === "ECONNABORTED") {
-      console.error("❌ DeepSeek timed out after 60s");
-      return res.status(500).json({ error: "DeepSeek API timed out. Try again." });
-    } else {
-      console.error("❌ Error:", err.message);
-      return res.status(500).json({ error: err.message });
-    }
+    console.error("Text analysis error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ── POST /analyze/pdf ────────────────────────────────────────
+// ─────────────────────────────────────────────
+// PDF ANALYSIS ROUTE
+// ─────────────────────────────────────────────
 app.post("/analyze/pdf", upload.single("resume"), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: "A PDF file is required (field: 'resume')." });
+    return res.status(400).json({ error: "PDF file is required" });
   }
 
   try {
@@ -134,46 +149,37 @@ app.post("/analyze/pdf", upload.single("resume"), async (req, res) => {
 
     if (!pdfData.text || !pdfData.text.trim()) {
       return res.status(400).json({
-        error: "Could not extract text from PDF. Make sure it is not a scanned image.",
+        error: "Could not extract text from PDF",
       });
     }
 
-    const analysis = await analyzeWithDeepSeek(pdfData.text.trim());
-    return res.json({ analysis });
+    const analysis = await analyzeWithDeepSeek(pdfData.text);
+    res.json({ analysis });
   } catch (err) {
-    if (err.response) {
-      console.error("❌ DeepSeek API error:", err.response.status, JSON.stringify(err.response.data));
-      return res.status(500).json({ error: `DeepSeek error ${err.response.status}: ${JSON.stringify(err.response.data)}` });
-    } else if (err.code === "ECONNABORTED") {
-      console.error("❌ DeepSeek timed out after 60s");
-      return res.status(500).json({ error: "DeepSeek API timed out. Try again." });
-    } else {
-      console.error("❌ Error:", err.message);
-      return res.status(500).json({ error: err.message });
-    }
+    console.error("PDF analysis error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ── Multer error handler ─────────────────────────────────────
-// eslint-disable-next-line no-unused-vars
+// ─────────────────────────────────────────────
+// ERROR HANDLING (MULTER)
+// ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError || err) {
+  if (err) {
     return res.status(400).json({ error: err.message });
   }
   next();
 });
 
-// ── Health check ─────────────────────────────────────────────
-app.get("/health", (_req, res) =>
-  res.json({ status: "ok", time: new Date().toISOString() })
-);
-
-// ── Start ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// START SERVER
+// ─────────────────────────────────────────────
 app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+
   if (!process.env.DEEPSEEK_API_KEY) {
-    console.warn("\n⚠️  DEEPSEEK_API_KEY not found in .env — requests will fail!");
+    console.warn("⚠️ WARNING: Missing DEEPSEEK_API_KEY");
   } else {
-    console.log("\n🔑  DeepSeek API key loaded — AI is active.");
+    console.log("🔑 DeepSeek API Key loaded");
   }
-  console.log(`✅  Server running on http://localhost:${PORT}\n`);
 });
