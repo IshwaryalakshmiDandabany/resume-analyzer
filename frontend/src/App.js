@@ -1,10 +1,8 @@
-// ============================================================
-//  App.js — Resume Analyzer Frontend (FINAL WORKING VERSION)
-// ============================================================
-
 import React, { useState, useRef } from "react";
 import axios from "axios";
 import "./App.css";
+
+const BASE_URL = "https://resume-analyzer-8d1l.onrender.com";
 
 export default function App() {
   const [mode, setMode] = useState("paste");
@@ -16,27 +14,17 @@ export default function App() {
 
   const fileInputRef = useRef(null);
 
-  function handleFileChange(e) {
-    const f = e.target.files[0];
-    if (f && f.type === "application/pdf") {
-      setPdfFile(f);
-      setError("");
-    } else {
-      setError("Please select a valid PDF file.");
-    }
-  }
-
   async function handleAnalyze() {
     setError("");
     setResult(null);
 
     if (mode === "paste" && !resumeText.trim()) {
-      setError("Please paste your resume content.");
+      setError("Paste resume first");
       return;
     }
 
     if (mode === "upload" && !pdfFile) {
-      setError("Please upload a PDF file.");
+      setError("Upload PDF first");
       return;
     }
 
@@ -45,120 +33,127 @@ export default function App() {
     try {
       let response;
 
-      // ✅ TEXT MODE
       if (mode === "paste") {
         response = await axios.post(
-          "https://resume-analyzer-8d1l.onrender.com/analyze/text",
-          { resumeText },
-          { timeout: 90000 }
+          `${BASE_URL}/analyze/text`,
+          { resumeText }
         );
-      }
-
-      // ✅ PDF MODE
-      else {
+      } else {
         const formData = new FormData();
         formData.append("resume", pdfFile);
 
         response = await axios.post(
-          "https://resume-analyzer-8d1l.onrender.com/analyze/pdf",
-          formData,
-          {
-            headers: { "Content-Type": "multipart/form-data" },
-            timeout: 90000,
-          }
+          `${BASE_URL}/analyze/pdf`,
+          formData
         );
       }
 
       setResult(response.data.analysis);
     } catch (err) {
-      if (err.response) {
-        setError(
-          `Server error ${err.response.status}: ${
-            err.response.data?.error || "Unknown error"
-          }`
-        );
-      } else if (err.code === "ECONNABORTED") {
-        setError("Request timed out. AI is taking too long.");
-      } else {
-        setError("Backend not reachable. Check Render deployment.");
-      }
+      setError("Backend error or not reachable");
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleReset() {
-    setResumeText("");
-    setPdfFile(null);
-    setResult(null);
-    setError("");
   }
 
   return (
     <div className="app">
       <div className="container">
 
-        <h1>Resume AI</h1>
+        <header className="header">
+          <h1 className="title">Resume <span className="title-accent">AI</span></h1>
+          <p className="subtitle">Smart Resume Analyzer</p>
+        </header>
 
         {!result && (
-          <div className="card">
+          <div className="card input-card">
 
-            <div>
-              <button onClick={() => setMode("paste")}>Paste</button>
-              <button onClick={() => setMode("upload")}>Upload PDF</button>
+            {/* MODE SWITCH */}
+            <div className="mode-switcher">
+              <button
+                className={`mode-btn ${mode === "paste" ? "active" : ""}`}
+                onClick={() => setMode("paste")}
+              >
+                Paste
+              </button>
+
+              <button
+                className={`mode-btn ${mode === "upload" ? "active" : ""}`}
+                onClick={() => setMode("upload")}
+              >
+                Upload PDF
+              </button>
             </div>
 
+            {/* TEXT AREA */}
             {mode === "paste" && (
               <textarea
+                className="resume-textarea"
+                placeholder="Paste your resume..."
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
-                placeholder="Paste resume here..."
-                rows={10}
               />
             )}
 
+            {/* FILE UPLOAD */}
             {mode === "upload" && (
-              <div onClick={() => fileInputRef.current.click()}>
+              <div
+                className="drop-zone"
+                onClick={() => fileInputRef.current.click()}
+              >
                 <input
                   type="file"
                   ref={fileInputRef}
-                  accept="application/pdf"
-                  onChange={handleFileChange}
                   hidden
+                  accept="application/pdf"
+                  onChange={(e) => setPdfFile(e.target.files[0])}
                 />
-                {pdfFile ? <p>{pdfFile.name}</p> : <p>Click to upload PDF</p>}
+                <p>{pdfFile ? pdfFile.name : "Click to upload PDF"}</p>
               </div>
             )}
 
-            {error && <p style={{ color: "red" }}>{error}</p>}
+            {/* ERROR */}
+            {error && <div className="error-banner">{error}</div>}
 
-            <button onClick={handleAnalyze} disabled={loading}>
+            {/* BUTTON */}
+            <button
+              className={`analyze-btn ${loading ? "loading" : ""}`}
+              onClick={handleAnalyze}
+              disabled={loading}
+            >
               {loading ? "Analyzing..." : "Analyze Resume"}
             </button>
 
           </div>
         )}
 
+        {/* RESULT */}
         {result && (
-          <div>
-            <h2>Score: {result.overallScore}</h2>
-            <p>{result.summary}</p>
+          <div className="results-wrapper">
 
-            <h3>Strengths</h3>
-            <ul>
-              {result.strengths.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ul>
+            <div className="card score-card">
+              <h2>Score: {result.overallScore}</h2>
+              <p>{result.summary}</p>
+            </div>
 
-            <h3>Improvements</h3>
-            <ul>
-              {result.improvements.map((i, idx) => (
-                <li key={idx}>{i}</li>
-              ))}
-            </ul>
+            <div className="card detail-card">
+              <h3 className="section-heading strengths-heading">Strengths</h3>
+              <ul className="insight-list">
+                {result.strengths.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            </div>
 
-            <button onClick={handleReset}>Analyze Another</button>
+            <div className="card detail-card">
+              <h3 className="section-heading improvements-heading">Improvements</h3>
+              <ul className="insight-list">
+                {result.improvements.map((i, idx) => <li key={idx}>{i}</li>)}
+              </ul>
+            </div>
+
+            <button className="reset-btn" onClick={() => setResult(null)}>
+              Analyze Another
+            </button>
+
           </div>
         )}
 
