@@ -6,7 +6,7 @@ import React, { useState, useRef } from "react";
 import axios from "axios";
 import "./App.css";
 
-const BASE_URL = "https://resume-analyzer-8d1l.onrender.com";
+  const BASE_URL = "https://resume-analyzer-8d1l.onrender.com?v=3";
 
 // Icons (unchanged)
 const UploadIcon = () => (
